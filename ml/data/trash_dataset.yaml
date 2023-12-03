@@ -1,6 +1,6 @@
-train: ./trash_dataset/train/images
-val: ./trash_dataset/valid/images
-test: ./trash_dataset/test/images
+train: ./data/trash_dataset/train/images
+val: ./data/trash_dataset/valid/images
+test: ./data/trash_dataset/test/images
 
 nc: 8
 names: ['aluminum', 'bottle', 'cardboard', 'carton', 'glass', 'paper', 'plastic', 'plastic-bottles']

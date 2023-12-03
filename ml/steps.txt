@@ -1,0 +1,11 @@
+# Setup
+python3 -m venv venv
+source venv/bin/activate
+pip3 install -r requirements.txt
+
+# Training
+python train.py --batch 32 --epochs 100 --data data/trash_dataset.yaml --weights checkpoints/yolov7_training.pt --device 5
+
+
+# Evaluating
+
