@@ -1,15 +1,17 @@
 # Setup
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv yolo_venv
+source yolo_venv/bin/activate
 pip3 install -r requirements.txt
 
 # Training
 python3 train.py --batch 32 --epochs 100 --data data/trash_dataset.yaml --weights checkpoints/yolov7_training.pt --device 5
 
-
 # Evaluating
 python3 detect.py --weights runs/train/exp/weights/best.pt --conf 0.1 --source data/trash_dataset/test/images
 
+
+# Info
+tensorboard --logdir runs/train
 
 # Converting to tflite model
 python3 export.py --weights runs/train/exp/weights/best.pt 
