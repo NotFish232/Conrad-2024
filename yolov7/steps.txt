@@ -14,6 +14,6 @@ python3 detect.py --weights runs/train/exp/weights/best.pt --conf 0.1 --source d
 tensorboard --logdir runs/train
 
 # Converting to tflite model
-python3 export.py --weights runs/train/exp/weights/best.pt 
-onnx-tf convert -i "runs/train/exp/weights/best.onnx" -o  "tf_model"
+python3 export.py --weights runs/train/{run}/weights/best.pt
+onnx-tf convert -i "runs/train/{run}/weights/best.onnx" -o  "tf_model"
 tflite_convert --saved_model_dir "tf_model" --output_file model.tflite
