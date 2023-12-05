@@ -1,0 +1,13 @@
+train: ./trash_dataset/train/images
+val: ./trash_dataset/valid/images
+test: ./trash_dataset/test/images
+
+nc: 8
+names: ['aluminum', 'bottle', 'cardboard', 'carton', 'glass', 'paper', 'plastic', 'plastic-bottles']
+
+roboflow:
+  workspace: trashdetect-wamod
+  project: trash_detect-subnn
+  version: 5
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/trashdetect-wamod/trash_detect-subnn/dataset/5
