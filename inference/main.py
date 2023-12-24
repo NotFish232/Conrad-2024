@@ -9,7 +9,8 @@ def process_image(image, interpreter, input_size=(640, 640)):
     image = image.resize(input_size)
     image = np.array(image, dtype=np.float32)
     image /= 255
-    image = image / scale + zero_point
+    image = np.round(image / scale) + zero_point
+    image = np.clip(image, -127, 128)
     image = image.astype(np.int8)
     image = image[np.newaxis, ...]
     return image
