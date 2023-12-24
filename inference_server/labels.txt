@@ -1,0 +1,8 @@
+aluminum
+bottle
+cardboard
+carton
+glass
+paper
+plastic
+plastic-bottles
