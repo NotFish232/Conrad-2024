@@ -28,6 +28,35 @@ def post_process(output_tensor, interpreter, confidence_threshold=0.25):
     return boxes, scores
 
 
+def calc_iou(box_A, box_B):
+    xA = max(box_A[0], box_B[0])
+    yA = max(box_A[1], box_B[1])
+    xB = min(box_A[2], box_B[2])
+    yB = min(box_A[3], box_B[3])
+
+    intersection_area = (xB - xA) * (yB - yA)
+
+    box_A_area = (box_A[2] - box_A[0]) * (box_A[3] - box_A[1])
+    box_B_area = (box_B[2] - box_B[0]) * (box_B[3] - box_B[1])
+
+    iou = intersection_area / float(box_A_area + box_B_area - intersection_area)
+
+    return iou
+
+
+def apply_iou_threshold(boxes, iou_threshold=0.25):
+    new_boxes = []
+    for box in boxes:
+        found_overlap = False
+        for new_box in new_boxes:
+            if calc_iou(box, new_box) > iou_threshold:
+                found_overlap = True
+                break
+        if not found_overlap:
+            new_boxes.append(box)
+    return new_boxes
+
+
 def main():
     # Load the Edge TPU model
     interpreter = Interpreter(
@@ -47,6 +76,9 @@ def main():
         interpreter.get_output_details()[0]["index"]
     )
     boxes, scores = post_process(detection_results, interpreter)
+    boxes = sorted(boxes, key=lambda b: scores[boxes.index(b)].max())
+    boxes = apply_iou_threshold(boxes)
+    scores = [scores[boxes.index(b)] for b in boxes]
 
     i = ImageDraw.Draw(image)
     for box, score in zip(boxes, scores):
