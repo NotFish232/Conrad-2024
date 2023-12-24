@@ -2,7 +2,6 @@ import tflite_runtime.interpreter as tflite
 from tflite_runtime.interpreter import Interpreter
 from PIL import Image, ImageDraw
 import numpy as np
-import argparse
 
 
 def process_image(image, interpreter, input_size=(640, 640)):
@@ -29,10 +28,6 @@ def post_process(output_tensor, interpreter, confidence_threshold=0.25):
 
 
 def main():
-    arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument("-l", "--labels")
-    args = arg_parser.parse_args()
-
     # Load the Edge TPU model
     interpreter = Interpreter(
         model_path="model.edge.tflite",
@@ -40,7 +35,7 @@ def main():
     )
     interpreter.allocate_tensors()
 
-    labels = [l.strip() for l in open(args.labels)]
+    labels = [l.strip() for l in open("labels.txt")]
 
     image = Image.open("input_image.png")
     input_image = process_image(image, interpreter)
