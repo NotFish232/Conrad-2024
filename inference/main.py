@@ -76,6 +76,8 @@ def main():
         interpreter.get_output_details()[0]["index"]
     )
     boxes, scores = post_process(detection_results, interpreter)
+    boxes = [b for b in boxes]
+    scores = [s for s in scores]
     boxes = sorted(boxes, key=lambda b: scores[boxes.index(b)].max())
     boxes = apply_iou_threshold(boxes)
     scores = [scores[boxes.index(b)] for b in boxes]
