@@ -16,14 +16,15 @@ def process_image(image, interpreter, input_size=(640, 640)):
     return image
 
 
-def post_process(output_tensor, interpreter, confidence_threshold=0.25, iou_threshold=0.75):
+def post_process(
+    output_tensor, interpreter, confidence_threshold=0.25, iou_threshold=0.75
+):
     scale, zero_point = interpreter.get_output_details()[0]["quantization"]
     output_tensor = output_tensor.squeeze().transpose(1, 0).astype(np.float32)
     output_tensor = scale * (output_tensor - zero_point)
     boxes, scores = np.split(output_tensor, [4], axis=1)
 
-    mask = scores > confidence_threshold
-    mask = np.any(mask, axis=1)
+    mask = np.any(scores > confidence_threshold, axis=1)
     boxes = boxes[mask]
     scores = scores[mask]
 
@@ -61,8 +62,6 @@ def calc_iou(box_A, box_B):
     return iou
 
 
-
-
 def main():
     # Load the Edge TPU model
     interpreter = Interpreter(
@@ -82,7 +81,7 @@ def main():
         interpreter.get_output_details()[0]["index"]
     )
     boxes, scores = post_process(detection_results, interpreter)
-    
+
     i = ImageDraw.Draw(image)
     for box, score in zip(boxes, scores):
         label_idx = score.argmax()
