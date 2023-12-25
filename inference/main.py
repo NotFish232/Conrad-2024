@@ -16,16 +16,33 @@ def process_image(image, interpreter, input_size=(640, 640)):
     return image
 
 
-def post_process(output_tensor, interpreter, confidence_threshold=0.25):
+def post_process(output_tensor, interpreter, confidence_threshold=0.25, iou_threshold=0.75):
     scale, zero_point = interpreter.get_output_details()[0]["quantization"]
     output_tensor = output_tensor.squeeze().transpose(1, 0).astype(np.float32)
     output_tensor = scale * (output_tensor - zero_point)
     boxes, scores = np.split(output_tensor, [4], axis=1)
+
     mask = scores > confidence_threshold
     mask = np.any(mask, axis=1)
     boxes = boxes[mask]
     scores = scores[mask]
-    return boxes, scores
+
+    sort_idxs = np.argsort(scores.max(axis=1), axis=0)
+    boxes = boxes[sort_idxs]
+    scores = scores[sort_idxs]
+
+    good_idxs = []
+    for idx, box in enumerate(boxes):
+        found_overlap = False
+        for idx in good_idxs:
+            if calc_iou(box, boxes[idx]) > iou_threshold:
+                found_overlap = True
+                break
+        if not found_overlap:
+            good_idxs.append(idx)
+    good_idxs = np.array(good_idxs)
+
+    return boxes[good_idxs], scores[good_idxs]
 
 
 def calc_iou(box_A, box_B):
@@ -44,17 +61,6 @@ def calc_iou(box_A, box_B):
     return iou
 
 
-def apply_iou_threshold(boxes, iou_threshold=0.25):
-    new_boxes = []
-    for box in boxes:
-        found_overlap = False
-        for new_box in new_boxes:
-            if calc_iou(box, new_box) > iou_threshold:
-                found_overlap = True
-                break
-        if not found_overlap:
-            new_boxes.append(box)
-    return new_boxes
 
 
 def main():
@@ -76,12 +82,7 @@ def main():
         interpreter.get_output_details()[0]["index"]
     )
     boxes, scores = post_process(detection_results, interpreter)
-    boxes = [b for b in boxes]
-    scores = [s for s in scores]
-    boxes = sorted(boxes, key=lambda b: scores[boxes.index(b)].max())
-    boxes = apply_iou_threshold(boxes)
-    scores = [scores[boxes.index(b)] for b in boxes]
-
+    
     i = ImageDraw.Draw(image)
     for box, score in zip(boxes, scores):
         label_idx = score.argmax()
