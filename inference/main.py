@@ -28,7 +28,7 @@ def post_process(
     boxes = boxes[mask]
     scores = scores[mask]
 
-    sort_idxs = np.argsort(scores.max(axis=1), axis=0)
+    sort_idxs = np.argsort(scores.max(axis=1), axis=0)[::-1]
     boxes = boxes[sort_idxs]
     scores = scores[sort_idxs]
 
@@ -41,7 +41,6 @@ def post_process(
                 break
         if not found_overlap:
             good_idxs.append(idx)
-    good_idxs = np.array(good_idxs)
 
     return boxes[good_idxs], scores[good_idxs]
 
@@ -57,7 +56,7 @@ def calc_iou(box_A, box_B):
     box_A_area = (box_A[2] - box_A[0]) * (box_A[3] - box_A[1])
     box_B_area = (box_B[2] - box_B[0]) * (box_B[3] - box_B[1])
 
-    iou = intersection_area / float(box_A_area + box_B_area - intersection_area)
+    iou = intersection_area / (box_A_area + box_B_area - intersection_area)
 
     return iou
 
