@@ -28,7 +28,7 @@ def post_process(
     boxes = boxes[mask]
     scores = scores[mask]
 
-    sort_idxs = np.argsort(scores.max(axis=1), axis=0)[::-1]
+    sort_idxs = np.argsort(np.max(scores, axis=1), axis=0)[::-1]
     boxes = boxes[sort_idxs]
     scores = scores[sort_idxs]
 
