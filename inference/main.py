@@ -2,9 +2,15 @@ import tflite_runtime.interpreter as tflite
 from tflite_runtime.interpreter import Interpreter
 from PIL import Image, ImageDraw
 import numpy as np
+import cv2
+
+INPUT_FILE = "input_video.mp4"
+OUTPUT_FILE = "output_video.mp4"
+IMG_SIZE = 640
+FPS = 30
 
 
-def process_image(image, interpreter, input_size=(640, 640)):
+def process_image(image, interpreter, input_size=(IMG_SIZE, IMG_SIZE)):
     scale, zero_point = interpreter.get_input_details()[0]["quantization"]
     image = image.resize(input_size)
     image = np.array(image, dtype=np.float32)
@@ -17,7 +23,7 @@ def process_image(image, interpreter, input_size=(640, 640)):
 
 
 def post_process(
-    output_tensor, interpreter, confidence_threshold=0.25, iou_threshold=0.75
+    output_tensor, interpreter, confidence_threshold=0.2, iou_threshold=0.75
 ):
     scale, zero_point = interpreter.get_output_details()[0]["quantization"]
     output_tensor = output_tensor.squeeze().transpose(1, 0).astype(np.float32)
@@ -61,6 +67,24 @@ def calc_iou(box_A, box_B):
     return iou
 
 
+def draw_box(image, box, label, score):
+    draw = ImageDraw.Draw(image)
+    cx = box[0] * image.size[0]
+    cy = box[1] * image.size[1]
+    w = box[2] * image.size[0]
+    h = box[3] * image.size[1]
+    x1 = cx - w // 2
+    y1 = cy - h // 2
+    x2 = cx + w // 2
+    y2 = cy + h // 2
+    draw.rectangle([(x1, y1), (x2, y2)], outline="red")
+    draw.text(
+        (x1 + 10, y1 + 10),
+        f"{label}: {score:.2f}",
+        fill="red",
+    )
+
+
 def main():
     # Load the Edge TPU model
     interpreter = Interpreter(
@@ -71,34 +95,44 @@ def main():
 
     labels = [l.strip() for l in open("labels.txt")]
 
-    image = Image.open("input_image.png")
-    input_image = process_image(image, interpreter)
-    interpreter.set_tensor(interpreter.get_input_details()[0]["index"], input_image)
-    interpreter.invoke()
-
-    detection_results = interpreter.get_tensor(
-        interpreter.get_output_details()[0]["index"]
+    input_video = cv2.VideoCapture(INPUT_FILE)
+    output_video = cv2.VideoWriter(
+        OUTPUT_FILE,
+        cv2.VideoWriter_fourcc(*"mp4v"),
+        FPS,
+        (
+            int(input_video.get(cv2.CAP_PROP_FRAME_WIDTH)),
+            int(input_video.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+        ),
     )
-    boxes, scores = post_process(detection_results, interpreter)
 
-    i = ImageDraw.Draw(image)
-    for box, score in zip(boxes, scores):
-        label_idx = score.argmax()
-        cx = box[0] * image.size[0]
-        cy = box[1] * image.size[1]
-        w = box[2] * image.size[0]
-        h = box[3] * image.size[1]
-        x1 = cx - w // 2
-        y1 = cy - h // 2
-        x2 = cx + w // 2
-        y2 = cy + h // 2
-        i.rectangle([(x1, y1), (x2, y2)], outline="red")
-        i.text(
-            (x1 + 10, y1 + 10),
-            f"{labels[label_idx]}: {score[label_idx].item():.2f}",
-            fill="red",
+    while input_video.isOpened():
+        ret, frame = input_video.read()
+
+        if not ret:
+            break
+
+        inp = process_image(Image.fromarray(frame), interpreter)
+
+        interpreter.set_tensor(interpreter.get_input_details()[0]["index"], inp)
+        interpreter.invoke()
+
+        detection_results = interpreter.get_tensor(
+            interpreter.get_output_details()[0]["index"]
         )
-    image.save("out.png")
+        boxes, scores = post_process(detection_results, interpreter)
+
+        image = Image.fromarray(frame)
+
+        for box, score in zip(boxes, scores):
+            score_idx = score.argmax()
+            label = labels[score_idx]
+            score = score[score_idx]
+            draw_box(image, box, label, score)
+
+        output_video.write(np.array(image))
+    input_video.release()
+    output_video.release()
 
 
 if __name__ == "__main__":
