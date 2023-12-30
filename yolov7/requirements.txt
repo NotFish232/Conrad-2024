@@ -41,5 +41,5 @@ thop  # FLOPs computation
 
 # Added
 onnx-tf==1.10.0
-tensorflow-probability==0.23.0
+# tensorflow-probability==0.23.0
 tritonclient==2.40.0
