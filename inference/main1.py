@@ -1,8 +1,8 @@
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator 
-from PIL import Image, ImageDraw
 import numpy as np
 import cv2
+import time
 
 INPUT_FILE =  "input_video.mp4"
 OUTPUT_FILE = "output_video.mp4"
@@ -15,7 +15,7 @@ FPS = 30
 def main():
     model = YOLO("yolov8N.pt")
 
-    input_video = cv2.VideoCapture(0)
+    input_video = cv2.VideoCapture(INPUT_FILE)
     output_video = cv2.VideoWriter(
         OUTPUT_FILE,
         cv2.VideoWriter_fourcc(*"mp4v"),
@@ -29,15 +29,14 @@ def main():
         ret, frame = input_video.read()
         if not ret:
             break
-
-        result = model.predict(frame, verbose=False)[0]
+        result = model.predict(frame, verbose=False, half=False)[0]
         annotator = Annotator(frame)
         for box in result.boxes:
             b = box.xyxy[0] 
             cls = box.cls.item()
             lbl = model.names[cls]
             prob = box.conf.item()
-            annotator.box_label(b, f"{lbl}: {prob:.2f}")
+            annotator.box_label(b, f"{lbl}: {prob:.2f}", color=(0, 0, 255))
 
 
         # Display the resulting frame
