@@ -4,7 +4,7 @@ from PIL import Image, ImageDraw
 import numpy as np
 import cv2
 
-INPUT_FILE = "input_video.mp4"
+INPUT_FILE =  "input_video.mp4"
 OUTPUT_FILE = "output_video.mp4"
 IMG_SIZE = 640
 FPS = 30
@@ -23,7 +23,7 @@ def process_image(image, interpreter, input_size=(IMG_SIZE, IMG_SIZE)):
 
 
 def post_process(
-    output_tensor, interpreter, confidence_threshold=0.2, iou_threshold=0.75
+    output_tensor, interpreter, confidence_threshold=0.25, iou_threshold=0.5
 ):
     scale, zero_point = interpreter.get_output_details()[0]["quantization"]
     output_tensor = output_tensor.squeeze().transpose(1, 0).astype(np.float32)
@@ -38,11 +38,22 @@ def post_process(
     boxes = boxes[sort_idxs]
     scores = scores[sort_idxs]
 
+    cx = boxes[:, 0]
+    cy = boxes[:, 1]
+    w = boxes[:, 2]
+    h = boxes[:, 3]
+    x1 = cx - w / 2 
+    y1 = cy - h / 2
+    x2 = cx + w / 2
+    y2 = cy + h / 2
+    boxes = np.stack((x1, y1, x2, y2), axis=1)
+
     good_idxs = []
+
     for idx, box in enumerate(boxes):
         found_overlap = False
-        for idx in good_idxs:
-            if calc_iou(box, boxes[idx]) > iou_threshold:
+        for good_idx in good_idxs:
+            if calc_iou(box, boxes[good_idx]) > iou_threshold:
                 found_overlap = True
                 break
         if not found_overlap:
@@ -57,7 +68,10 @@ def calc_iou(box_A, box_B):
     xB = min(box_A[2], box_B[2])
     yB = min(box_A[3], box_B[3])
 
-    intersection_area = (xB - xA) * (yB - yA)
+    intersection_area = abs(max((xB - xA, 0)) * max((yB - yA), 0))
+
+    if intersection_area == 0:
+        return 0
 
     box_A_area = (box_A[2] - box_A[0]) * (box_A[3] - box_A[1])
     box_B_area = (box_B[2] - box_B[0]) * (box_B[3] - box_B[1])
@@ -69,15 +83,11 @@ def calc_iou(box_A, box_B):
 
 def draw_box(image, box, label, score):
     draw = ImageDraw.Draw(image)
-    cx = box[0] * image.size[0]
-    cy = box[1] * image.size[1]
-    w = box[2] * image.size[0]
-    h = box[3] * image.size[1]
-    x1 = cx - w // 2
-    y1 = cy - h // 2
-    x2 = cx + w // 2
-    y2 = cy + h // 2
-    draw.rectangle([(x1, y1), (x2, y2)], outline="red")
+    x1 = box[0] * image.size[0]
+    y1 = box[1] * image.size[1]
+    x2 = box[2] * image.size[0]
+    y2 = box[3] * image.size[1]
+    draw.rectangle([(x1, y1), (x2, y2)], outline="red", width=2)
     draw.text(
         (x1 + 10, y1 + 10),
         f"{label}: {score:.2f}",
@@ -87,10 +97,7 @@ def draw_box(image, box, label, score):
 
 def main():
     # Load the Edge TPU model
-    interpreter = Interpreter(
-        model_path="model.edge.tflite",
-        experimental_delegates=[tflite.load_delegate("libedgetpu.so.1")],
-    )
+    interpreter = Interpreter(model_path="model.tflite")
     interpreter.allocate_tensors()
 
     labels = [l.strip() for l in open("labels.txt")]
@@ -105,10 +112,8 @@ def main():
             int(input_video.get(cv2.CAP_PROP_FRAME_HEIGHT)),
         ),
     )
-
     while input_video.isOpened():
         ret, frame = input_video.read()
-
         if not ret:
             break
 
@@ -130,7 +135,16 @@ def main():
             score = score[score_idx]
             draw_box(image, box, label, score)
 
-        output_video.write(np.array(image))
+        image = np.array(image)
+
+        # Display the resulting frame
+        cv2.imshow("Video", image)
+
+        # Press Q on keyboard to  exit
+        if cv2.waitKey(25) & 0xFF == ord("q"):
+            break
+
+        output_video.write(image)
     input_video.release()
     output_video.release()
 
