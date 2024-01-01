@@ -1,6 +1,6 @@
 import xarm
 import time
-from scipy.optimize import fsolve
+from scipy.optimize import least_squares
 import math
 
 # 1: claw pincers
@@ -23,6 +23,11 @@ H = 5
 L1 = 4
 L2 = 4
 L3 = 4
+M3_BOUNDS = (math.pi / 12, 3 / 4 * math.pi)
+M4_BOUNDS = (math.pi / 12, 7 / 12 * math.pi)
+M5_BOUNDS = (-math.pi / 2, math.pi / 2)
+M6_BOUNDS = (-math.pi / 2, math.pi / 2)
+BOUNDS = [M3_BOUNDS, M4_BOUNDS, M5_BOUNDS, M6_BOUNDS]
 
 
 def calc_angles(x: float, y: float, z: float) -> tuple[float, float, float, float]:
@@ -34,13 +39,15 @@ def calc_angles(x: float, y: float, z: float) -> tuple[float, float, float, floa
         eq_3 = H + math.cos(M5) * L1 + math.cos(M4 + M5) * L2 + math.cos(M3 + M4 + M5) * L3 - z
         # fmt: on
         return (eq_1, eq_2, eq_3, 0)
-
-    M3, M4, M5, M6 = fsolve(equations, (0, 0, 0, 0))
-    print(M3, M4, M5, M6)
+    result = least_squares(
+        equations,
+        [sum(b) / 2 for b in BOUNDS],
+        bounds=[*zip(*BOUNDS)],
+    )
+    M3, M4, M5, M6 = result.x
     return M3, M4, M5, M6
 
 
-calc_angles(3, 4, 2)
 
 
 arm = xarm.Controller("USB")
