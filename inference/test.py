@@ -1,10 +1,8 @@
+import math
 import xarm
 import time
 from scipy.optimize import least_squares
-import math
 
-arm = xarm.Controller("USB")
-print(arm.getBatteryVoltage())
 
 # 1: claw pincers
 # 2: claw rotate
@@ -15,28 +13,15 @@ print(arm.getBatteryVoltage())
 
 LIMITS = {
     1: ((1150, None), (2300, None), 1500),  # close
-    2: ((400, None),  (2600, None), 500),   # counterclockwise
-    3: ((400, 10),    (1900, 140),  400),   # down
-    4: ((400, -100),  (2600, 100),  1500),  # down
-    5: ((1200, 95),   (2600, -30),  2300),  # up
-    6: ((400, 120),   (2600, -50),  1900),  # counterclockwise
+    2: ((400, None), (2600, None), 500),  # counterclockwise
+    3: ((400, 10), (1900, 140), 400),  # down
+    4: ((400, -100), (2600, 100), 1500),  # down
+    5: ((1200, 95), (2600, -30), 2300),  # up
+    6: ((400, 120), (2600, -50), 1900),  # counterclockwise
 }
 
-def angle_to_position(servo, degrees):
-    lower, upper, _ = LIMITS[servo]
-    lower_pos, lower_angle = lower
-    upper_pos, upper_angle = upper
-    
-    slope = (upper_pos - lower_pos) / (upper_angle - lower_angle)
-    position = int((degrees - lower_angle) * slope + lower_pos)
-    return position
-
-def move_arm(servo, position):
-    arm.setPosition(servo, position, wait=False)
-
-
 H = 7.8  # cm
-L1 = 13  
+L1 = 13
 L2 = 9.5
 L3 = 13
 M3_BOUNDS = (math.pi / 12, 3 / 4 * math.pi)
@@ -44,6 +29,13 @@ M4_BOUNDS = (math.pi / 12, 7 / 12 * math.pi)
 M5_BOUNDS = (-math.pi / 2, math.pi / 2)
 M6_BOUNDS = (-math.pi / 2, math.pi / 2)
 BOUNDS = [M3_BOUNDS, M4_BOUNDS, M5_BOUNDS, M6_BOUNDS]
+
+
+def angle_to_position(servo: int, angle: float) -> int:
+    (lower_pos, lower_angle), (upper_pos, upper_angle), _ = LIMITS[servo]
+    slope = (upper_pos - lower_pos) / (upper_angle - lower_angle)
+    position = int((angle - lower_angle) * slope + lower_pos)
+    return position
 
 
 def calc_angles(x: float, y: float, z: float) -> tuple[float, float, float, float]:
@@ -56,6 +48,7 @@ def calc_angles(x: float, y: float, z: float) -> tuple[float, float, float, floa
         eq_4 = abs(M3 + M4 + M5) - math.pi
         # fmt: on
         return (eq_1, eq_2, eq_3, eq_4)
+
     result = least_squares(
         equations,
         [sum(b) / 2 for b in BOUNDS],
@@ -65,24 +58,29 @@ def calc_angles(x: float, y: float, z: float) -> tuple[float, float, float, floa
     return tuple(math.degrees(m) for m in result.x)
 
 
-input("Ready?")
-m3, m4, m5, m6 = calc_angles(19.5, 11.5, 0)
-servos_and_angles = zip(range(3, 7), (m3, m4, m5, m6))
-for servo, angle in servos_and_angles:
-    print(servo, angle)
-    position = angle_to_position(servo, angle)
-    print(position)
-    move_arm(servo, position)
+def move_to_default(arm: xarm.Controller) -> None:
+    for servo, (*_, default) in LIMITS.items():
+        arm.setPosition(servo, default, wait=False)
+    time.sleep(1)  # idk if a sleep is necessary here
 
 
-input("Moving servos to default positions. Press enter to continue...")
+def move_to_position(arm: xarm.Controller, pos: tuple[float, float, float]) -> None:
+    # TODO: Alan do the intervals kekw 
+    m3, m4, m5, m6 = calc_angles(*pos)
+    for servo, angle in zip(range(3, 7), (m3, m4, m5, m6)):
+        position = angle_to_position(servo, angle)
+        arm.setPosition(servo, position, wait=False)
 
-for servo, limits in LIMITS.items():
-    upper, lower, default = limits
-    arm.setPosition(servo, default, wait=False)
+
+def main() -> None:
+    arm = xarm.Controller("USB")
+    print(f"Arm successfully set up")
+
+    while True:
+        move_to_default(arm)
+        pos = input("Enter a position (seperate x, y, z with spaces): ").split(" ")
+        move_to_position(arm, pos)
 
 
-while True:
-    s = input("Enter servo number: ")
-    arm.setPosition(int(s), int(input("Enter position: ")))
-    print()
+if __name__ == "__main__":
+    main()
