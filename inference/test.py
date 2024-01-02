@@ -74,7 +74,8 @@ def move_to_position(arm: xarm.Controller, pos: tuple[float, float, float]) -> N
 
 def main() -> None:
     arm = xarm.Controller("USB")
-    print(f"Arm successfully set up")
+    print("Arm successfully set up")
+    input(" enter to continue...")
 
     while True:
         move_to_default(arm)
