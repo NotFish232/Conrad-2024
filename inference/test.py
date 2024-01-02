@@ -75,11 +75,14 @@ def move_to_position(arm: xarm.Controller, pos: tuple[float, float, float]) -> N
 def main() -> None:
     arm = xarm.Controller("USB")
     print("Arm successfully set up")
-    input(" enter to continue...")
+    input("Press enter to continue...")
 
     while True:
         move_to_default(arm)
-        pos = input("Enter a position (seperate x, y, z with spaces): ").split(" ")
+        inp = input("Enter a position (seperate x, y, z with spaces): ")
+        if inp.lower() == "q":
+            break
+        pos = tuple(*map(int, inp.split(" ")))
         move_to_position(arm, pos)
 
 
