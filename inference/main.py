@@ -1,152 +1,118 @@
-import tflite_runtime.interpreter as tflite
-from tflite_runtime.interpreter import Interpreter
-from PIL import Image, ImageDraw
-import numpy as np
-import cv2
-
-INPUT_FILE =  "input_video.mp4"
-OUTPUT_FILE = "output_video.mp4"
-IMG_SIZE = 640
-FPS = 30
+import math
+import xarm
+import time
+from scipy.optimize import least_squares
 
 
-def process_image(image, interpreter, input_size=(IMG_SIZE, IMG_SIZE)):
-    scale, zero_point = interpreter.get_input_details()[0]["quantization"]
-    image = image.resize(input_size)
-    image = np.array(image, dtype=np.float32)
-    image /= 255
-    image = np.round(image / scale) + zero_point
-    image = np.clip(image, -127, 128)
-    image = image.astype(np.int8)
-    image = image[np.newaxis, ...]
-    return image
+# 1: claw pincers
+# 2: claw rotate
+# 3: arm top
+# 4: arm middle
+# 5: arm bottom
+# 6: base
+
+LIMITS = {
+    1: ((1150, 90), (2300, 180), 1500),  # close
+    2: ((400, -180), (2600, 200), 500),  # counterclockwise
+    3: ((410, 10), (1900, 140), 410),  # down
+    4: ((400, -100), (2600, 100), 1500),  # down
+    5: ((1200, 95), (2600, -30), 2300),  # up
+    6: ((400, 120), (2600, -50), 1900),  # counterclockwise
+}
 
 
-def post_process(
-    output_tensor, interpreter, confidence_threshold=0.25, iou_threshold=0.5
-):
-    scale, zero_point = interpreter.get_output_details()[0]["quantization"]
-    output_tensor = output_tensor.squeeze().transpose(1, 0).astype(np.float32)
-    output_tensor = scale * (output_tensor - zero_point)
-    boxes, scores = np.split(output_tensor, [4], axis=1)
+H = 7.8  # cm
+L1 = 13
+L2 = 9.5
+L3 = 13
 
-    mask = np.any(scores > confidence_threshold, axis=1)
-    boxes = boxes[mask]
-    scores = scores[mask]
+# width, height of Area that camera sees
+# 
+AREA_W = 50
+AREA_H = 50
 
-    sort_idxs = np.argsort(np.max(scores, axis=1), axis=0)[::-1]
-    boxes = boxes[sort_idxs]
-    scores = scores[sort_idxs]
+M3_BOUNDS = (math.pi / 12, 3 / 4 * math.pi)
+M4_BOUNDS = (math.pi / 12, 7 / 12 * math.pi)
+M5_BOUNDS = (-math.pi / 2, math.pi / 2)
+M6_BOUNDS = (-math.pi / 2, math.pi / 2)
+BOUNDS = [M3_BOUNDS, M4_BOUNDS, M5_BOUNDS, M6_BOUNDS]
 
-    cx = boxes[:, 0]
-    cy = boxes[:, 1]
-    w = boxes[:, 2]
-    h = boxes[:, 3]
-    x1 = cx - w / 2 
-    y1 = cy - h / 2
-    x2 = cx + w / 2
-    y2 = cy + h / 2
-    boxes = np.stack((x1, y1, x2, y2), axis=1)
+CURRENT_POSITIONS = {i: None for i in range(1, 7)}
 
-    good_idxs = []
+def angle_to_position(servo: int, angle: float) -> int:
+    (lower_pos, lower_angle), (upper_pos, upper_angle), _ = LIMITS[servo]
+    slope = (upper_pos - lower_pos) / (upper_angle - lower_angle)
+    position = int((angle - lower_angle) * slope + lower_pos)
+    return position
 
-    for idx, box in enumerate(boxes):
-        found_overlap = False
-        for good_idx in good_idxs:
-            if calc_iou(box, boxes[good_idx]) > iou_threshold:
-                found_overlap = True
-                break
-        if not found_overlap:
-            good_idxs.append(idx)
-
-    return boxes[good_idxs], scores[good_idxs]
+def position_to_angle(servo: int, position: int) -> float:
+    (lower_pos, lower_angle), (upper_pos, upper_angle), _ = LIMITS[servo]
+    slope = (upper_angle - lower_angle) / (upper_pos - lower_pos)
+    angle = (position - lower_pos) * slope + lower_angle
+    return angle
 
 
-def calc_iou(box_A, box_B):
-    xA = max(box_A[0], box_B[0])
-    yA = max(box_A[1], box_B[1])
-    xB = min(box_A[2], box_B[2])
-    yB = min(box_A[3], box_B[3])
+def calc_angles(x: float, y: float, z: float) -> tuple[float, float, float, float]:
+    def equations(p: tuple[float, float, float, float]) -> tuple[float, float, float]:
+        M3, M4, M5, M6 = p
+        # fmt: off
+        eq_1 = math.cos(M6) * (math.sin(M5) * L1 + math.sin(M4 + M5) * L2 + math.sin(M3 + M4 + M5) * L3 ) - x
+        eq_2 = math.sin(M6) * (math.sin(M5) * L1 + math.sin(M4 + M5) * L2 + math.sin(M3 + M4 + M5) * L3 ) - y
+        eq_3 = H + math.cos(M5) * L1 + math.cos(M4 + M5) * L2 + math.cos(M3 + M4 + M5) * L3 - z
+        eq_4 = abs(M3 + M4 + M5) - math.pi
+        # fmt: on
+        return (eq_1, eq_2, eq_3, eq_4)
 
-    intersection_area = abs(max((xB - xA, 0)) * max((yB - yA), 0))
-
-    if intersection_area == 0:
-        return 0
-
-    box_A_area = (box_A[2] - box_A[0]) * (box_A[3] - box_A[1])
-    box_B_area = (box_B[2] - box_B[0]) * (box_B[3] - box_B[1])
-
-    iou = intersection_area / (box_A_area + box_B_area - intersection_area)
-
-    return iou
-
-
-def draw_box(image, box, label, score):
-    draw = ImageDraw.Draw(image)
-    x1 = box[0] * image.size[0]
-    y1 = box[1] * image.size[1]
-    x2 = box[2] * image.size[0]
-    y2 = box[3] * image.size[1]
-    draw.rectangle([(x1, y1), (x2, y2)], outline="red", width=2)
-    draw.text(
-        (x1 + 10, y1 + 10),
-        f"{label}: {score:.2f}",
-        fill="red",
+    result = least_squares(
+        equations,
+        [sum(b) / 2 for b in BOUNDS],
+        bounds=[*zip(*BOUNDS)],
     )
+    # M3, M4, M5, M6 = result.x
+    return tuple(math.degrees(m) for m in result.x)
 
 
-def main():
-    # Load the Edge TPU model
-    interpreter = Interpreter(model_path="model.tflite")
-    interpreter.allocate_tensors()
+def move_to_default(arm: xarm.Controller) -> None:
+    for servo, (*_, default) in LIMITS.items():
+        CURRENT_POSITIONS[servo] = default
+        arm.setPosition(servo, default, wait=False)
 
-    labels = [l.strip() for l in open("labels.txt")]
 
-    input_video = cv2.VideoCapture(INPUT_FILE)
-    output_video = cv2.VideoWriter(
-        OUTPUT_FILE,
-        cv2.VideoWriter_fourcc(*"mp4v"),
-        FPS,
-        (
-            int(input_video.get(cv2.CAP_PROP_FRAME_WIDTH)),
-            int(input_video.get(cv2.CAP_PROP_FRAME_HEIGHT)),
-        ),
-    )
-    while input_video.isOpened():
-        ret, frame = input_video.read()
-        if not ret:
+def move_to_position(arm: xarm.Controller, pos: tuple[float, float, float]) -> None:
+    m3, m4, m5, m6 = calc_angles(*pos)
+    servos = list(zip(range(3, 7), (m3, m4, m5, m6)))
+    
+    for servo, angle in servos:
+        move(arm, servo, angle_to_position(servo, angle))
+
+MIN_DURATION = 800
+MAX_DURATION = 5000
+SPEED = 30  # degrees per second
+def move(arm, servo, target_pos):
+    current_pos = CURRENT_POSITIONS[servo]
+    current_angle = position_to_angle(servo, current_pos)
+    target_angle = position_to_angle(servo, target_pos)
+    delta_angle = abs(target_angle - current_angle)
+    duration = min(max(int(delta_angle * (1 / SPEED) * 1000), MIN_DURATION), MAX_DURATION)
+    print(servo, delta_angle, duration / 1000)
+    
+    CURRENT_POSITIONS[servo] = target_pos
+    arm.setPosition(servo, target_pos, duration=duration, wait=False)
+
+
+def main() -> None:
+    arm = xarm.Controller("USB")
+    print("Arm successfully set up")
+    print(arm.getBatteryVoltage())
+
+    while True:
+        input("Press enter to go to default...")
+        move_to_default(arm)
+        inp = input("Enter a position (separate x, y, z with spaces): ")
+        if inp.lower() == "q":
             break
-
-        inp = process_image(Image.fromarray(frame), interpreter)
-
-        interpreter.set_tensor(interpreter.get_input_details()[0]["index"], inp)
-        interpreter.invoke()
-
-        detection_results = interpreter.get_tensor(
-            interpreter.get_output_details()[0]["index"]
-        )
-        boxes, scores = post_process(detection_results, interpreter)
-
-        image = Image.fromarray(frame)
-
-        for box, score in zip(boxes, scores):
-            score_idx = score.argmax()
-            label = labels[score_idx]
-            score = score[score_idx]
-            draw_box(image, box, label, score)
-
-        image = np.array(image)
-
-        # Display the resulting frame
-        cv2.imshow("Video", image)
-
-        # Press Q on keyboard to  exit
-        if cv2.waitKey(25) & 0xFF == ord("q"):
-            break
-
-        output_video.write(image)
-    input_video.release()
-    output_video.release()
+        pos = tuple(map(int, inp.split(" ")))
+        move_to_position(arm, pos)
 
 
 if __name__ == "__main__":
