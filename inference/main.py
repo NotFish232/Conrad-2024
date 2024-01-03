@@ -26,6 +26,7 @@ LIMITS = {
 
 
 # Position, angle
+# fmt: off
 POINTS = {
     1: ( (1150, 90),   (2300, 180),              ),
     2: ( (400, -180),  (2600, 200),              ),
@@ -34,6 +35,7 @@ POINTS = {
     5: ( (2325, 0),    (1850, 45),  (1325, 90),  ),
     6: ( (1900, 0),    (875, 45),                ),
 }
+# fmt: on
 
 
 H = 9.5  # cm
@@ -56,36 +58,34 @@ BOUNDS = [M3_BOUNDS, M4_BOUNDS, M5_BOUNDS, M6_BOUNDS]
 
 CURRENT_POSITIONS = {i: None for i in range(1, 7)}
 
-def calc_regressions() -> dict[int, LinearRegression]:
-    regressions = {}
+
+def calc_regressions() -> (
+    tuple[dict[int, LinearRegression], dict[int, LinearRegression]]
+):
+    pta_regressions, atp_regressions = {}, {}
     for servo, pts in POINTS.items():
         servo_positions = []
         angles = []
         for servo_position, angle in pts:
             servo_positions.append([servo_position])
             angles.append([angle])
-        regression = LinearRegression()
-        regression.fit(angles, servo_positions)
-        regressions[servo] = regression
-    return regressions
+        pta_regression = LinearRegression().fit(servo_positions, angles)
+        atp_regression = LinearRegression().fit(angles, servo_positions)
+        pta_regressions[servo] = pta_regression
+        atp_regressions[servo] = atp_regression
+    return pta_regressions, atp_regressions
 
 
 # use like REGRESSIONS[servo].predict([[angle]])[0, 0]
-REGRESSIONS = calc_regressions()
+PTA_REGRESSIONS, ATP_REGRESSIONS = calc_regressions()
 
 
 def angle_to_position(servo: int, angle: float) -> int:
-    (lower_pos, lower_angle), (upper_pos, upper_angle), _ = LIMITS[servo]
-    slope = (upper_pos - lower_pos) / (upper_angle - lower_angle)
-    position = int((angle - lower_angle) * slope + lower_pos)
-    return position
+    return int(ATP_REGRESSIONS[servo].predict([[angle]])[0, 0])
 
 
 def position_to_angle(servo: int, position: int) -> float:
-    (lower_pos, lower_angle), (upper_pos, upper_angle), _ = LIMITS[servo]
-    slope = (upper_angle - lower_angle) / (upper_pos - lower_pos)
-    angle = (position - lower_pos) * slope + lower_angle
-    return angle
+    return PTA_REGRESSIONS[servo].predict([[position]])[0, 0]
 
 
 def bounding_box_to_position(bbox: T.Tensor) -> tuple[float, float]:
@@ -131,12 +131,15 @@ MIN_DURATION = 800
 MAX_DURATION = 5000
 SPEED = 30  # degrees per second
 
+
 def move(arm, servo, target_pos):
     current_pos = CURRENT_POSITIONS[servo]
     current_angle = position_to_angle(servo, current_pos)
     target_angle = position_to_angle(servo, target_pos)
     delta_angle = abs(target_angle - current_angle)
-    duration = min(max(int(delta_angle * (1 / SPEED) * 1000), MIN_DURATION), MAX_DURATION)
+    duration = min(
+        max(int(delta_angle * (1 / SPEED) * 1000), MIN_DURATION), MAX_DURATION
+    )
     print(servo, delta_angle, duration / 1000)
 
     CURRENT_POSITIONS[servo] = target_pos
