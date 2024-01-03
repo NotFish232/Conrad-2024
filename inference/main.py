@@ -58,6 +58,13 @@ BOUNDS = [M3_BOUNDS, M4_BOUNDS, M5_BOUNDS, M6_BOUNDS]
 
 CURRENT_POSITIONS = {i: None for i in range(1, 7)}
 
+# fmt: off
+EQ_X = lambda m3, m4, m5, m6: math.cos(m6) * (math.sin(m5) * L1 + math.sin(m4 + m5) * L2 + math.sin(m3 + m4 + m5) * L3)
+EQ_Y = lambda m3, m4, m5, m6: math.sin(m6) * (math.sin(m5) * L1 + math.sin(m4 + m5) * L2 + math.sin(m3 + m4 + m5) * L3)
+EQ_Z = lambda m3, m4, m5: H + math.cos(m5) * L1 + math.cos(m4 + m5) * L2 + math.cos(m3 + m4 + m5) * L3
+EQ_THETA = lambda m3, m4, m5: m3 + m4 + m5
+# fmt: on
+
 
 def calc_regressions() -> (
     tuple[dict[int, LinearRegression], dict[int, LinearRegression]]
@@ -95,13 +102,13 @@ def bounding_box_to_position(bbox: T.Tensor) -> tuple[float, float]:
 
 def calc_angles(x: float, y: float, z: float) -> tuple[float, float, float, float]:
     def equations(p: tuple[float, float, float, float]) -> tuple[float, float, float]:
-        M3, M4, M5, M6 = p
-        # fmt: off
-        eq_1 = math.cos(M6) * (math.sin(M5) * L1 + math.sin(M4 + M5) * L2 + math.sin(M3 + M4 + M5) * L3 ) - x
-        eq_2 = math.sin(M6) * (math.sin(M5) * L1 + math.sin(M4 + M5) * L2 + math.sin(M3 + M4 + M5) * L3 ) - y
-        eq_3 = H + math.cos(M5) * L1 + math.cos(M4 + M5) * L2 + math.cos(M3 + M4 + M5) * L3 - z
-        eq_4 = abs(M3 + M4 + M5) - math.pi
-        # fmt: on
+        m3, m4, m5, m6 = p
+
+        eq_1 = EQ_X(m3, m4, m5, m6) - x
+        eq_2 = EQ_Y(m3, m4, m5, m6) - y
+        eq_3 = EQ_Z(m3, m4, m5) - z
+        eq_4 = abs(EQ_THETA(m3, m4, m5)) - math.pi
+
         return (eq_1, eq_2, eq_3, eq_4)
 
     result = least_squares(
@@ -109,7 +116,7 @@ def calc_angles(x: float, y: float, z: float) -> tuple[float, float, float, floa
         [sum(b) / 2 for b in BOUNDS],
         bounds=[*zip(*BOUNDS)],
     )
-    # M3, M4, M5, M6 = result.x
+
     return tuple(math.degrees(m) for m in result.x)
 
 
