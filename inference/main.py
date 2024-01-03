@@ -25,11 +25,23 @@ LIMITS = {
 }
 POINTS = {}
 
-# use like REGRESSIONS[servo].predict(angle)
-REGRESSIONS = {
-    s: LinearRegression().fit(*reversed([*zip(*p)])) for s, p in POINTS.ITEMS()
-}
 
+def calc_regressions() -> dict[int, LinearRegression]:
+    regressions = {}
+    for servo, pts in POINTS.items():
+        servo_positions = []
+        angles = []
+        for servo_position, angle in pts:
+            servo_positions.append([servo_position])
+            angles.append([angle])
+        regression = LinearRegression()
+        regression.fit(angles, servo_positions)
+        regressions[servo] = regression
+    return regressions
+
+
+# use like REGRESSIONS[servo].predict([[angle]])[0, 0]
+REGRESSIONS = calc_regressions()
 
 H = 7.8  # cm
 L1 = 13
