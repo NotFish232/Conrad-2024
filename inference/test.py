@@ -1,9 +1,6 @@
 import math
 import xarm
-import cv2
-from ultralytics import YOLO
-from utralytics.util.plotting import Annotator
-import torch as T
+import time
 from scipy.optimize import least_squares
 
 
@@ -29,12 +26,9 @@ L1 = 13
 L2 = 9.5
 L3 = 13
 
-# width, height of Area that camera sees
-# As well as the location of the arm origin relative to the bottom left of the camera vision
+# width, height of Area that camera sees, as well as offset of robot from 
 AREA_W = 50
 AREA_H = 50
-ARM_X = 10
-ARM_Y = 10
 
 M3_BOUNDS = (math.pi / 12, 3 / 4 * math.pi)
 M4_BOUNDS = (math.pi / 12, 7 / 12 * math.pi)
@@ -44,23 +38,17 @@ BOUNDS = [M3_BOUNDS, M4_BOUNDS, M5_BOUNDS, M6_BOUNDS]
 
 CURRENT_POSITIONS = {i: None for i in range(1, 7)}
 
-
 def angle_to_position(servo: int, angle: float) -> int:
     (lower_pos, lower_angle), (upper_pos, upper_angle), _ = LIMITS[servo]
     slope = (upper_pos - lower_pos) / (upper_angle - lower_angle)
     position = int((angle - lower_angle) * slope + lower_pos)
     return position
 
-
 def position_to_angle(servo: int, position: int) -> float:
     (lower_pos, lower_angle), (upper_pos, upper_angle), _ = LIMITS[servo]
     slope = (upper_angle - lower_angle) / (upper_pos - lower_pos)
     angle = (position - lower_pos) * slope + lower_angle
     return angle
-
-def bounding_box_to_position(bbox: T.Tensor) -> tuple[float, float]:
-    cx, cy, *_ = bbox.tolist()
-    return cx * AREA_W - ARM_X, (1 - cy) * AREA_H - ARM_Y
 
 
 def calc_angles(x: float, y: float, z: float) -> tuple[float, float, float, float]:
@@ -92,55 +80,37 @@ def move_to_default(arm: xarm.Controller) -> None:
 def move_to_position(arm: xarm.Controller, pos: tuple[float, float, float]) -> None:
     m3, m4, m5, m6 = calc_angles(*pos)
     servos = list(zip(range(3, 7), (m3, m4, m5, m6)))
-
+    
     for servo, angle in servos:
         move(arm, servo, angle_to_position(servo, angle))
-
 
 MIN_DURATION = 800
 MAX_DURATION = 5000
 SPEED = 30  # degrees per second
-
-
 def move(arm, servo, target_pos):
     current_pos = CURRENT_POSITIONS[servo]
     current_angle = position_to_angle(servo, current_pos)
     target_angle = position_to_angle(servo, target_pos)
     delta_angle = abs(target_angle - current_angle)
-    duration = min(
-        max(int(delta_angle * (1 / SPEED) * 1000), MIN_DURATION), MAX_DURATION
-    )
+    duration = min(max(int(delta_angle * (1 / SPEED) * 1000), MIN_DURATION), MAX_DURATION)
     print(servo, delta_angle, duration / 1000)
-
+    
     CURRENT_POSITIONS[servo] = target_pos
     arm.setPosition(servo, target_pos, duration=duration, wait=False)
 
 
-
 def main() -> None:
-    model = YOLO("yolov8N.pt")
-    input_video = cv2.VideoCapture(0)
     arm = xarm.Controller("USB")
     print("Arm successfully set up")
+    print(arm.getBatteryVoltage())
 
     while True:
-        ret, frame = input_video.read()
-        if not ret:
-            break
-
-        result = model.predict(frame, verbose=False)[0]
-        annotator = Annotator(frame)
-        box = result.boxes[0]
-        annotator.box_label(
-            box.xyxy[0],
-            f"{model.names[ box.cls.item()]}: {box.conf.item():.2f}",
-            color=(0, 0, 255),
-        )
-        cv2.imshow("Detection Results", frame)
-
-        input("Press enter to move to selected piece...")
+        input("Press enter to go to default...")
         move_to_default(arm)
-        pos = bounding_box_to_position(box.xywhn[0])
+        inp = input("Enter a position (separate x, y, z with spaces): ")
+        if inp.lower() == "q":
+            break
+        pos = tuple(map(int, inp.split(" ")))
         move_to_position(arm, pos)
 
 

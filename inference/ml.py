@@ -57,6 +57,8 @@ def main():
             break
 
         output_video.write(np.array(frame))
+
+        break
     input_video.release()
     output_video.release()
 
