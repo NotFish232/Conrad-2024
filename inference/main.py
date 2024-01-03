@@ -5,6 +5,7 @@ from ultralytics import YOLO
 from utralytics.util.plotting import Annotator
 import torch as T
 from scipy.optimize import least_squares
+from sklearn.linear_model import LinearRegression
 
 
 # 1: claw pincers
@@ -21,6 +22,12 @@ LIMITS = {
     4: ((400, -100), (2600, 100), 1500),  # down
     5: ((1200, 95), (2600, -30), 2300),  # up
     6: ((400, 120), (2600, -50), 1900),  # counterclockwise
+}
+POINTS = {}
+
+# use like REGRESSIONS[servo].predict(angle)
+REGRESSIONS = {
+    s: LinearRegression().fit(*reversed([*zip(*p)])) for s, p in POINTS.ITEMS()
 }
 
 
@@ -57,6 +64,7 @@ def position_to_angle(servo: int, position: int) -> float:
     slope = (upper_angle - lower_angle) / (upper_pos - lower_pos)
     angle = (position - lower_pos) * slope + lower_angle
     return angle
+
 
 def bounding_box_to_position(bbox: T.Tensor) -> tuple[float, float]:
     cx, cy, *_ = bbox.tolist()
@@ -114,7 +122,6 @@ def move(arm, servo, target_pos):
 
     CURRENT_POSITIONS[servo] = target_pos
     arm.setPosition(servo, target_pos, duration=duration, wait=False)
-
 
 
 def main() -> None:
