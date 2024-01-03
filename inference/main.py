@@ -2,7 +2,7 @@ import math
 import xarm
 import cv2
 from ultralytics import YOLO
-from utralytics.util.plotting import Annotator
+from ultralytics.utils.plotting import Annotator
 import torch as T
 from scipy.optimize import least_squares
 from sklearn.linear_model import LinearRegression
@@ -23,8 +23,38 @@ LIMITS = {
     5: ((1200, 95), (2600, -30), 2300),  # up
     6: ((400, 120), (2600, -50), 1900),  # counterclockwise
 }
-POINTS = {}
 
+
+# Position, angle
+POINTS = {
+    1: ( (1150, 90),   (2300, 180),              ),
+    2: ( (400, -180),  (2600, 200),              ),
+    3: ( (1275, 90),   (750, 45),   (1750, 135), ),
+    4: ( (1500, 0),    (1975, 45),  (2425, 90),  ),
+    5: ( (2325, 0),    (1850, 45),  (1325, 90),  ),
+    6: ( (1900, 0),    (875, 45),                ),
+}
+
+
+H = 9.5  # cm
+L1 = 10.5
+L2 = 9
+L3 = 17
+
+# width, height of Area that camera sees
+# As well as the location of the arm origin relative to the bottom left of the camera vision
+AREA_W = 50
+AREA_H = 50
+ARM_X = 10
+ARM_Y = 10
+
+M3_BOUNDS = (math.pi / 12, 3 / 4 * math.pi)
+M4_BOUNDS = (math.pi / 12, 7 / 12 * math.pi)
+M5_BOUNDS = (-math.pi / 2, math.pi / 2)
+M6_BOUNDS = (-math.pi / 2, math.pi / 2)
+BOUNDS = [M3_BOUNDS, M4_BOUNDS, M5_BOUNDS, M6_BOUNDS]
+
+CURRENT_POSITIONS = {i: None for i in range(1, 7)}
 
 def calc_regressions() -> dict[int, LinearRegression]:
     regressions = {}
@@ -42,26 +72,6 @@ def calc_regressions() -> dict[int, LinearRegression]:
 
 # use like REGRESSIONS[servo].predict([[angle]])[0, 0]
 REGRESSIONS = calc_regressions()
-
-H = 7.8  # cm
-L1 = 13
-L2 = 9.5
-L3 = 13
-
-# width, height of Area that camera sees
-# As well as the location of the arm origin relative to the bottom left of the camera vision
-AREA_W = 50
-AREA_H = 50
-ARM_X = 10
-ARM_Y = 10
-
-M3_BOUNDS = (math.pi / 12, 3 / 4 * math.pi)
-M4_BOUNDS = (math.pi / 12, 7 / 12 * math.pi)
-M5_BOUNDS = (-math.pi / 2, math.pi / 2)
-M6_BOUNDS = (-math.pi / 2, math.pi / 2)
-BOUNDS = [M3_BOUNDS, M4_BOUNDS, M5_BOUNDS, M6_BOUNDS]
-
-CURRENT_POSITIONS = {i: None for i in range(1, 7)}
 
 
 def angle_to_position(servo: int, angle: float) -> int:
@@ -121,15 +131,12 @@ MIN_DURATION = 800
 MAX_DURATION = 5000
 SPEED = 30  # degrees per second
 
-
 def move(arm, servo, target_pos):
     current_pos = CURRENT_POSITIONS[servo]
     current_angle = position_to_angle(servo, current_pos)
     target_angle = position_to_angle(servo, target_pos)
     delta_angle = abs(target_angle - current_angle)
-    duration = min(
-        max(int(delta_angle * (1 / SPEED) * 1000), MIN_DURATION), MAX_DURATION
-    )
+    duration = min(max(int(delta_angle * (1 / SPEED) * 1000), MIN_DURATION), MAX_DURATION)
     print(servo, delta_angle, duration / 1000)
 
     CURRENT_POSITIONS[servo] = target_pos
