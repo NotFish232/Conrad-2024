@@ -16,7 +16,7 @@ from sklearn.linear_model import LinearRegression
 # 6: base
 
 LIMITS = {
-    1: ((1150, 90), (2300, 180), 1500),  # close
+    1: ((1150, 90), (2300, 180), 2300),  # close
     2: ((400, -180), (2600, 200), 500),  # counterclockwise
     3: ((410, 10), (1900, 140), 410),  # down
     4: ((400, -100), (2600, 100), 1500),  # down
@@ -53,22 +53,13 @@ ARM_Y = 10
 M3_BOUNDS = (math.pi / 12, 3 / 4 * math.pi)
 M4_BOUNDS = (math.pi / 12, 7 / 12 * math.pi)
 M5_BOUNDS = (-math.pi / 2, math.pi / 2)
-M6_BOUNDS = (- 5 / 9 * math.pi, 2 / 3 * math.pi)
+M6_BOUNDS = (-math.pi / 2, math.pi / 2)
 BOUNDS = [M3_BOUNDS, M4_BOUNDS, M5_BOUNDS, M6_BOUNDS]
 
 CURRENT_POSITIONS = {i: None for i in range(1, 7)}
 
-# fmt: off
-EQ_X = lambda m3, m4, m5, m6: math.cos(m6) * (math.sin(m5) * L1 + math.sin(m4 + m5) * L2 + math.sin(m3 + m4 + m5) * L3)
-EQ_Y = lambda m3, m4, m5, m6: math.sin(m6) * (math.sin(m5) * L1 + math.sin(m4 + m5) * L2 + math.sin(m3 + m4 + m5) * L3)
-EQ_Z = lambda m3, m4, m5: H + math.cos(m5) * L1 + math.cos(m4 + m5) * L2 + math.cos(m3 + m4 + m5) * L3
-EQ_THETA = lambda m3, m4, m5: m3 + m4 + m5
-# fmt: on
 
-
-def calc_regressions() -> (
-    tuple[dict[int, LinearRegression], dict[int, LinearRegression]]
-):
+def calc_regressions() -> (tuple[dict[int, LinearRegression], dict[int, LinearRegression]]):
     pta_regressions, atp_regressions = {}, {}
     for servo, pts in POINTS.items():
         servo_positions = []
@@ -102,13 +93,13 @@ def bounding_box_to_position(bbox: T.Tensor) -> tuple[float, float]:
 
 def calc_angles(x: float, y: float, z: float) -> tuple[float, float, float, float]:
     def equations(p: tuple[float, float, float, float]) -> tuple[float, float, float]:
-        m3, m4, m5, m6 = p
-
-        eq_1 = EQ_X(m3, m4, m5, m6) - x
-        eq_2 = EQ_Y(m3, m4, m5, m6) - y
-        eq_3 = EQ_Z(m3, m4, m5) - z
-        eq_4 = abs(EQ_THETA(m3, m4, m5)) - math.pi
-
+        M3, M4, M5, M6 = p
+        # fmt: off
+        eq_1 = math.cos(M6) * (math.sin(M5) * L1 + math.sin(M4 + M5) * L2 + math.sin(M3 + M4 + M5) * L3 ) - x
+        eq_2 = math.sin(M6) * (math.sin(M5) * L1 + math.sin(M4 + M5) * L2 + math.sin(M3 + M4 + M5) * L3 ) - y
+        eq_3 = H + math.cos(M5) * L1 + math.cos(M4 + M5) * L2 + math.cos(M3 + M4 + M5) * L3 - z
+        eq_4 = abs(M3 + M4 + M5) - math.pi
+        # fmt: on
         return (eq_1, eq_2, eq_3, eq_4)
 
     result = least_squares(
@@ -116,7 +107,7 @@ def calc_angles(x: float, y: float, z: float) -> tuple[float, float, float, floa
         [sum(b) / 2 for b in BOUNDS],
         bounds=[*zip(*BOUNDS)],
     )
-
+    # M3, M4, M5, M6 = result.x
     return tuple(math.degrees(m) for m in result.x)
 
 
@@ -126,26 +117,8 @@ def move_to_default(arm: xarm.Controller) -> None:
         arm.setPosition(servo, default, wait=False)
 
 
-X_OFFSET = -2
-X_COEFFICIENT = 1
-Y_OFFSET = 0
-Y_COEFFICIENT = 0.5
-Z_OFFSET = 0
-Z_COEFFICIENT = 1 
-
-ADJUSTMENTS = ((X_OFFSET, X_COEFFICIENT), (Y_OFFSET, Y_COEFFICIENT), (Z_OFFSET, Z_COEFFICIENT))
-
-
 def move_to_position(arm: xarm.Controller, pos: tuple[float, float, float]) -> None:
-    pos = tuple(c * p + o for (o, c), p in zip(ADJUSTMENTS, pos))
     m3, m4, m5, m6 = calc_angles(*pos)
-    m3r, m4r, m5r, m6r = tuple(math.radians(x) for x in (m3, m4, m5, m6))
-    x = EQ_X(m3r, m4r, m5r, m6r)
-    y = EQ_Y(m3r, m4r, m5r, m6r)
-    z = EQ_Z(m3r, m4r, m5r)
-    theta = math.degrees(EQ_THETA(m3r, m4r, m5r))
-    print(f"({x:.2f}, {y:.2f}, {z:.2f}) {theta:.2f}")
-    print()
     servos = list(zip(range(3, 7), (m3, m4, m5, m6)))
 
     for servo, angle in servos:
@@ -171,56 +144,40 @@ def move(arm, servo, target_pos):
     arm.setPosition(servo, target_pos, duration=duration, wait=False)
 
 
+
 arm = xarm.Controller("USB")
 print("Arm successfully set up")
 input("Press enter to move to default position...")
 move_to_default(arm)
 
-# while True:
-#     inp = input("Enter a position to move to: ")
-#     if inp == "default":
-#         move_to_default(arm)
-#         continue
-#     pos = tuple(float(i) for i in inp.split())
-#     move_to_position(arm, pos)
-
-
-def main() -> None:
-    input_video = cv2.VideoCapture(4)
-    print("Video capture set up")
-    # arm = xarm.Controller("USB")
-    print("Arm successfully set up")
-    model = YOLO("yolov8N.pt")
-    print("Model loaded")
-
-    while True:
-        ret, frame = input_video.read()
-        if not ret:
-            break
-
-        result = model.predict(frame, verbose=False)[0]
-        annotator = Annotator(frame)
-        if len(result.boxes) == 0:
-            cv2.imshow("Detection Results", frame)
-            if cv2.waitKey(50) & 0xFF == ord("q"):
-                break
-            continue
-        box = result.boxes[0]
-        annotator.box_label(
-            box.xyxy[0],
-            f"{model.names[ box.cls.item()]}: {box.conf.item():.2f}",
-            color=(0, 0, 255),
-        )
-        cv2.imshow("Detection Results", frame)
-
-        if cv2.waitKey(50) & 0xFF == ord("q"):
-            break
-
-        input("Press enter to move to selected piece...")
+while True:
+    inp = input("Enter a position to move to: ")
+    if inp == "default":
         move_to_default(arm)
-        pos = (*bounding_box_to_position(box.xywhn[0]), 0)
-        move_to_position(arm, pos)
+        continue
+    pos = tuple(float(i) for i in inp.split())
+    move_to_position(arm, pos)
 
 
-if __name__ == "__main__":
-    main()
+model = YOLO("yolov8N.pt")
+input_video = cv2.VideoCapture(0)
+while True:
+    ret, frame = input_video.read()
+    if not ret:
+        break
+
+    result = model.predict(frame, verbose=False)[0]
+    annotator = Annotator(frame)
+    box = result.boxes[0]
+    annotator.box_label(
+        box.xyxy[0],
+        f"{model.names[ box.cls.item()]}: {box.conf.item():.2f}",
+        color=(0, 0, 255),
+    )
+    cv2.imshow("Detection Results", frame)
+
+    input("Press enter to move to selected piece...")
+    move_to_default(arm)
+    pos = bounding_box_to_position(box.xywhn[0])
+    move_to_position(arm, pos)
+

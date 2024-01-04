@@ -4,7 +4,7 @@ import numpy as np
 import cv2
 import time
 
-INPUT_FILE = "input_video.mp4"
+INPUT_FILE = 4
 OUTPUT_FILE = "output_video.mp4"
 IMG_SIZE = 640
 
@@ -57,8 +57,7 @@ def main():
             break
 
         output_video.write(np.array(frame))
-
-        break
+        
     input_video.release()
     output_video.release()
 
