@@ -1,4 +1,4 @@
-from .servo import Servo
+from .servo import Servo 
 from .util import Util
 import time
 
@@ -8,7 +8,7 @@ class Controller:
     CMD_SERVO_MOVE          = 0x03
     CMD_GET_BATTERY_VOLTAGE = 0x0f
     CMD_SERVO_STOP          = 0x14
-    CMD_GET_SERVO_POSITION  = 0x15
+    CMD_GET_SERVO_POSITION  = 0x06  # 0x05
 
     def __init__(self, com_port, debug=False):
         if com_port.startswith('COM'):
@@ -39,9 +39,9 @@ class Controller:
         if isinstance(servos, int) or isinstance(servos, float):
             if position == None:
                 raise ValueError('Parameter \'position\' missing.')
-            if isinstance(position, int):
-                if position < 0 or position > 1000:
-                    raise ValueError('Parameter \'position\' must be between 0 and 1000.')
+            # if isinstance(position, int):
+            #     if position < 0 or position > 1000:
+            #         raise ValueError('Parameter \'position\' must be between 0 and 1000.')
             if isinstance(position, float):
                 if position < -125.0 or position > 125.0:
                     raise ValueError('Parameter \'position\' must be between -125.0 and 125.0.')
@@ -55,11 +55,11 @@ class Controller:
                 if isinstance(servo, Servo):
                     data.extend([servo.servo_id, servo.position & 0xff, (servo.position & 0xff00) >> 8])
                 elif len(servo) == 2 and isinstance(servo[0], int):
-                    if isinstance(servo[1], int):
-                        if servo[1] < 0 or servo[1] > 1000:
-                            raise ValueError('Parameter \'position\' must be between 0 and 1000.')
-                        position = servo[1]
-                    elif isinstance(servo[1], float):
+                    # if isinstance(servo[1], int):
+                    #     if servo[1] < 0 or servo[1] > 1000:
+                    #         raise ValueError('Parameter \'position\' must be between 0 and 1000.')
+                    #     position = servo[1]
+                    if isinstance(servo[1], float):
                         if servo[1] < -125.0 or servo[1] > 125.0:
                             raise ValueError('Parameter \'position\' must be between -125.0 and 125.0.')
                         position = Util._angle_to_position(servo[1])
@@ -150,6 +150,7 @@ class Controller:
             if len(data):
                 report_data.extend(data)
             self._usb_recv_event = False
+            # print(report_data)
             self._device.write(report_data)
 
     def _recv(self, cmd):
@@ -170,7 +171,8 @@ class Controller:
             else:
                 return None
         else:  # Is USB
-            self._input_report = self._device.read(64, 50)
+            self._input_report = self._device.read(64, 500)
+            # print(self._input_report)
             if self._input_report[0] == self.SIGNATURE and self._input_report[1] == self.SIGNATURE and self._input_report[3] == cmd:
                 length = self._input_report[2]
                 data = self._input_report[4:4 + length]
