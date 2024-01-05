@@ -27,12 +27,16 @@ def main():
 
     while input_video.isOpened():
         ret, frame = input_video.read()
+        blurred = cv2.GaussianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (5, 5), 0)
+        edges = cv2.Canny(blurred, 100, 200)
+        cv2.imshow("thing", edges)
+        cv2.waitKey(25)
+        continue
         if not ret:
             break
-        result = model.predict(frame, verbose=False, half=False, conf=0.5, iou=0.8)[0]
+        result = model.predict(frame, verbose=False, half=False)[0]
         annotator = Annotator(frame)
-        boxes = [box for box in result.boxes if box.xywhn[0, 0] > 0.25]
-        for box in boxes:
+        for box in result.boxes:
             b = box.xyxy[0]
             cls = box.cls.item()
             lbl = model.names[cls]
@@ -58,7 +62,7 @@ def main():
             break
 
         output_video.write(np.array(frame))
-
+        
     input_video.release()
     output_video.release()
 
