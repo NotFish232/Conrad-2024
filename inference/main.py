@@ -18,7 +18,7 @@ from sklearn.linear_model import LinearRegression
 
 LIMITS = {
     1: ((1150, 90), (2300, 180), 1150),  # close
-    2: ((400, -180), (2600, 200), 1500),  # counterclockwise
+    2: ((400, 0), (2600, 90), 1500),  # counterclockwise
     3: ((410, 10), (1900, 140), 410),  # down
     4: ((400, -100), (2600, 100), 1500),  # down
     5: ((1200, 95), (2600, -30), 2300),  # up
@@ -29,8 +29,8 @@ LIMITS = {
 # Position, angle
 # fmt: off
 POINTS = {
-    1: ( (1150, 90),   (2300, 180),              ),
-    2: ( (400, -180),  (2600, 200),              ),
+    1: ( (1150, 0),    (2300, 45),               ),
+    2: ( (400,  0),    (2600, 45),               ),
     3: ( (1275, 90),   (750, 45),   (1750, 135), ),
     4: ( (1500, 0),    (1975, 45),  (2475, 90),  ),
     5: ( (2325, 0),    (1850, 45),  (1325, 90),  ),
@@ -38,19 +38,20 @@ POINTS = {
 }
 # fmt: on
 
-
+### Measurements of arm joints
 H = 14.5  # cm
 L1 = 10.5
 L_3_1 = 1.7
 L2 = 9
 L3 = 17
+###
 
 # width, height of Area that camera sees
 # As well as the location of the arm origin relative to the bottom left of the camera vision
 AREA_W = 52
 AREA_H = 41
 ARM_X = -3
-ARM_Y = 41 - 31
+ARM_Y = 43.5
 
 M3_BOUNDS = (0, 3 / 4 * math.pi)
 M4_BOUNDS = (0, 7 / 12 * math.pi)
@@ -66,6 +67,40 @@ EQ_Y = lambda m3, m4, m5, m6: math.sin(m6) * (math.sin(m5) * L1 + math.sin(m4 + 
 EQ_Z = lambda m3, m4, m5: H + math.cos(m5) * L1 + math.cos(m4 + m5) * L2 + math.cos(m3 + m4 + m5) * L3 + math.sin(m3 + m4 + m5) * L_3_1
 EQ_THETA = lambda m3, m4, m5: m3 + m4 + m5
 # fmt: on
+
+
+### Adjustments for Servo position calculations
+X_OFFSET = -2
+X_COEFFICIENT = 1
+Y_OFFSET = 0
+Y_COEFFICIENT = 0.5
+Z_OFFSET = 0
+Z_COEFFICIENT = 1
+
+ADJUSTMENTS = (
+    (X_OFFSET, X_COEFFICIENT),
+    (Y_OFFSET, Y_COEFFICIENT),
+    (Z_OFFSET, Z_COEFFICIENT),
+)
+###
+
+### Bin Constants
+BINS = [
+    (-30, 25, 25),
+    (-15, 15, 25),
+    # (-20, 3, 25),
+]
+###
+
+### Claw close measuement for each label
+CLASS_NAME_TO_SERVO_POS = {"Paper": 2200, "Other plastic": 2150, "Bottle cap": 2000}
+###
+
+# Movement speeds
+MIN_DURATION = 500
+MAX_DURATION = 1000
+SPEED = 60  # degrees per second
+###
 
 
 def calc_regressions() -> (
@@ -97,22 +132,6 @@ def position_to_angle(servo: int, position: int) -> float:
     return PTA_REGRESSIONS[servo].predict([[position]])[0, 0]
 
 
-def open_claw(arm):
-    move(arm, 1, 1150)
-
-
-def close_claw(arm):
-    move(arm, 1, 2200)
-
-
-def vertical_claw(arm):
-    move(arm, 2, 1500)
-
-
-def horizontal_claw(arm):
-    move(arm, 2, 500)
-
-
 def bounding_box_to_position(bbox: T.Tensor) -> tuple[float, float]:
     cx, cy, *_ = bbox.tolist()
     return cx * AREA_W - ARM_X, cy * AREA_H - ARM_Y
@@ -138,44 +157,49 @@ def calc_angles(x: float, y: float, z: float) -> tuple[float, float, float, floa
     return tuple(math.degrees(m) for m in result.x)
 
 
-def move_to_default(arm: xarm.Controller, open_claw: bool = True) -> None:
+def move_to_default(arm: xarm.Controller, open: bool = True) -> None:
     for servo, (*_, default) in LIMITS.items():
         CURRENT_POSITIONS[servo] = default
 
-        if servo == 1 and not open_claw:
+        if servo == 1 and not open:
             continue
 
         arm.setPosition(servo, default, wait=False)
-        time.sleep(0.5)
+
+    time.sleep(0.1)
 
 
-X_OFFSET = -2
-X_COEFFICIENT = 1
-Y_OFFSET = 0
-Y_COEFFICIENT = 0.5
-Z_OFFSET = 0
-Z_COEFFICIENT = 1
+def open_claw(arm: xarm.Controller) -> None:
+    move(arm, 1, 1150, wait=True)
 
-ADJUSTMENTS = (
-    (X_OFFSET, X_COEFFICIENT),
-    (Y_OFFSET, Y_COEFFICIENT),
-    (Z_OFFSET, Z_COEFFICIENT),
-)
 
-CLAW_ADJUST_TIME = 0.95
+def close_claw(arm: xarm.Controller, pos: int | None = None) -> None:
+    move(arm, 1, pos or 2025, wait=True)
+
+
+def vertical_claw(arm: xarm.Controller) -> None:
+    move(arm, 2, 1500, wait=True)
+
+
+def horizontal_claw(arm: xarm.Controller) -> None:
+    move(arm, 2, 500, wait=True)
 
 
 def move_to_position(
-    arm: xarm.Controller, pos: tuple[float, float, float], open=False, close=False
+    arm: xarm.Controller,
+    pos: tuple[float, float, float],
+    open: bool = False,
+    close: bool = False,
+    duration: int | None = None,
 ) -> None:
     # pos = tuple(c * p + o for (o, c), p in zip(ADJUSTMENTS, pos))
     m3, m4, m5, m6 = calc_angles(*pos)
-    m3r, m4r, m5r, m6r = tuple(math.radians(x) for x in (m3, m4, m5, m6))
+    """ m3r, m4r, m5r, m6r = tuple(math.radians(x) for x in (m3, m4, m5, m6))
     x = EQ_X(m3r, m4r, m5r, m6r)
     y = EQ_Y(m3r, m4r, m5r, m6r)
     z = EQ_Z(m3r, m4r, m5r)
     theta = math.degrees(EQ_THETA(m3r, m4r, m5r))
-    print(f"({x:.2f}, {y:.2f}, {z:.2f}) {theta:.2f}")
+    print(f"({x:.2f}, {y:.2f}, {z:.2f}) {theta:.2f}")"""
     servos = list(zip(range(3, 7), (m3, m4, m5, m6)))
 
     durations = []
@@ -183,25 +207,23 @@ def move_to_position(
     for servo, angle in servos:
         durations.append(move(arm, servo, angle_to_position(servo, angle)))
 
-    max_duration = max(durations) / 1000
+    max_duration = (duration or max(durations)) / 1000
+
+    time.sleep(max_duration)
 
     if close:
-        time.sleep(CLAW_ADJUST_TIME * max_duration)
         close_claw(arm)
-        time.sleep(1)
-    elif open:
-        time.sleep(max_duration + 0.1)
+    if open:
+        horizontal_claw(arm)
         open_claw(arm)
-    else:
-        time.sleep(max_duration + 0.1)
 
 
-MIN_DURATION = 500
-MAX_DURATION = 1000
-SPEED = 60  # degrees per second
-
-
-def move(arm, servo, target_pos):
+def move(
+    arm: xarm.Controller,
+    servo: int,
+    target_pos: tuple[float, float, float],
+    wait: bool = False,
+) -> float:
     current_pos = CURRENT_POSITIONS[servo]
     current_angle = position_to_angle(servo, current_pos)
     target_angle = position_to_angle(servo, target_pos)
@@ -215,79 +237,59 @@ def move(arm, servo, target_pos):
     )
 
     CURRENT_POSITIONS[servo] = target_pos
-    arm.setPosition(servo, target_pos, duration=duration, wait=False)
+    arm.setPosition(servo, target_pos, duration=duration, wait=wait)
 
     return duration
 
 
-BINS = [
-    (-30, 25, 25),
-    (-15, 15, 25),
-    (-20, 3, 25),
-]
 arm = xarm.Controller("USB")
 
-# move_to_default(arm)
-# for bin in BINS:
-#     input()
-#     move_to_position(arm, bin)
 
-# while True:
-#     inp = input("Enter a position to move to: ")
-#     if inp == "default":
-#         move_to_default(arm)
-#         continue
-#     pos = tuple(float(i) for i in inp.split())
-
-
-def pickup(arm, pos, bin_num):
+def pickup_detected(
+    arm: xarm.Controller, pos: tuple[float, float, float], pred_class: str, bin_num: int
+) -> None:
     move_to_position(arm, (pos[0], pos[1], pos[2] + 10))
-    move_to_position(arm, pos, close=True)
-    move_to_position(arm, (pos[0], pos[1], pos[2] + 10))
-    move_to_default(arm, open_claw=False)
+    move_to_position(arm, pos)
+    close_claw(arm, CLASS_NAME_TO_SERVO_POS.get(pred_class, None))
+
+    move_to_default(arm, open=False)
     move_to_position(arm, BINS[bin_num], open=True)
     move_to_default(arm)
-    
+
 
 def main() -> None:
-    print("Video capture set up")
-    print("Arm successfully set up")
     model = YOLO("yolov8N.pt")
-    print("Model loaded")
+    # equivalant of allocating tensors
+    model.predict(cv2.VideoCapture(0).read()[1], verbose=False)
 
-    # input("Press enter to move to default position...")
     move_to_default(arm)
-
     while True:
-
-        # input("Press enter to capture a frame...")
-        ret, frame = cv2.VideoCapture(1).read()
+        ret, frame = cv2.VideoCapture(0).read()
         if not ret:
             break
 
-        result = model.predict(frame, verbose=False)[0]
+        result = model.predict(frame, verbose=False, conf=0.15)[0]
         annotator = Annotator(frame)
-        boxes = [box for box in result.boxes if box.xywhn[0, 0] > 0.25]
+        boxes = [box for box in result.boxes if 0.25 < box.xywhn[0, 0] < 0.6]
+     
+        if len(boxes) > 0:
+            for i, box in enumerate(boxes):
+                color = (0, 0, 255) if i == 0 else (255, 0, 0)
+                annotator.box_label(
+                    box.xyxy[0],
+                    f"{model.names[box.cls.item()]}: {box.conf.item():.2f}",
+                    color=color,
+                )
 
+        cv2.imshow("Detection Results", frame)
+        if cv2.waitKey(50) & 0xFF == ord("q"):
+            break
         if len(boxes) == 0:
-            cv2.imshow("Detection Results", frame)
-            if cv2.waitKey(50) & 0xFF == ord("q"):
-                break
             continue
+
         box = boxes[0]
-        annotator.box_label(
-            box.xyxy[0],
-            f"{model.names[ box.cls.item()]}: {box.conf.item():.2f}",
-            color=(0, 0, 255),
-        )
-        # cv2.imshow("Detection Results", frame)
-
-        # if cv2.waitKey(50) & 0xFF == ord("q"):
-        #    break
-
         pos = (*bounding_box_to_position(box.xywhn[0]), 0)
-        pickup(arm, pos, 0)
-        time.sleep(1)
+        pickup_detected(arm, pos, model.names[box.cls.item()], int(box.cls.item() < 6))
 
 
 if __name__ == "__main__":
