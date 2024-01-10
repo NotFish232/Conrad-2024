@@ -285,9 +285,9 @@ def main() -> None:
         # if cv2.waitKey(50) & 0xFF == ord("q"):
         #    break
 
-        input("Press enter to move to selected piece...")
         pos = (*bounding_box_to_position(box.xywhn[0]), 0)
         pickup(arm, pos, 0)
+        time.sleep(1)
 
 
 if __name__ == "__main__":
