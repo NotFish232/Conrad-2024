@@ -50,8 +50,8 @@ L3 = 17
 # As well as the location of the arm origin relative to the bottom left of the camera vision
 AREA_W = 52
 AREA_H = 41
-ARM_X = -3
-ARM_Y = 43.5
+ARM_X = 0
+ARM_Y = 41 - 10.5
 
 M3_BOUNDS = (0, 3 / 4 * math.pi)
 M4_BOUNDS = (0, 7 / 12 * math.pi)
@@ -70,18 +70,18 @@ EQ_THETA = lambda m3, m4, m5: m3 + m4 + m5
 
 
 ### Adjustments for Servo position calculations
-X_OFFSET = -2
-X_COEFFICIENT = 1
-Y_OFFSET = 0
-Y_COEFFICIENT = 0.5
-Z_OFFSET = 0
-Z_COEFFICIENT = 1
+# X_OFFSET = -2
+# X_COEFFICIENT = 1
+# Y_OFFSET = 0
+# Y_COEFFICIENT = 0.5
+# Z_OFFSET = 0
+# Z_COEFFICIENT = 1
 
-ADJUSTMENTS = (
-    (X_OFFSET, X_COEFFICIENT),
-    (Y_OFFSET, Y_COEFFICIENT),
-    (Z_OFFSET, Z_COEFFICIENT),
-)
+# ADJUSTMENTS = (
+#     (X_OFFSET, X_COEFFICIENT),
+#     (Y_OFFSET, Y_COEFFICIENT),
+#     (Z_OFFSET, Z_COEFFICIENT),
+# )
 ###
 
 ### Bin Constants
@@ -93,7 +93,7 @@ BINS = [
 ###
 
 ### Claw close measuement for each label
-CLASS_NAME_TO_SERVO_POS = {"Paper": 2200, "Other plastic": 2150, "Bottle cap": 2000}
+CLASS_NAME_TO_SERVO_POS = {"Paper": 2200, "Other plastic": 2150, "Bottle cap": 2000, "Can": 2100}
 ###
 
 # Movement speeds
@@ -166,7 +166,7 @@ def move_to_default(arm: xarm.Controller, open: bool = True) -> None:
 
         arm.setPosition(servo, default, wait=False)
 
-    time.sleep(0.1)
+    time.sleep(0.5)
 
 
 def open_claw(arm: xarm.Controller) -> None:
@@ -263,6 +263,10 @@ def main() -> None:
     model.predict(cv2.VideoCapture(0).read()[1], verbose=False)
 
     move_to_default(arm)
+
+    # capture = cv2.VideoCapture(0)
+    #capture.set(cv2.CAP_PROP_BUFFERSIZE, 0)
+
     while True:
         ret, frame = cv2.VideoCapture(0).read()
         if not ret:
@@ -290,6 +294,9 @@ def main() -> None:
         box = boxes[0]
         pos = (*bounding_box_to_position(box.xywhn[0]), 0)
         pickup_detected(arm, pos, model.names[box.cls.item()], int(box.cls.item() < 6))
+
+        # for i in range(4):
+        #     capture.grab()
 
 
 if __name__ == "__main__":
