@@ -174,7 +174,7 @@ def open_claw(arm: xarm.Controller) -> None:
 
 
 def close_claw(arm: xarm.Controller, pos: int | None = None) -> None:
-    move(arm, 1, pos or 2025, wait=True)
+    move(arm, 1, pos or 1700, wait=True)
 
 
 def vertical_claw(arm: xarm.Controller) -> None:
@@ -257,7 +257,7 @@ def pickup_detected(
     move_to_default(arm)
 
 
-def main() -> None:
+def main_ml() -> None:
     model = YOLO("yolov8N.pt")
     # equivalant of allocating tensors
     model.predict(cv2.VideoCapture(0).read()[1], verbose=False)
@@ -298,6 +298,54 @@ def main() -> None:
         # for i in range(4):
         #     capture.grab()
 
+CLOSE = 0
+OPEN = 1
+DEFAULT = 2
+BIN = (-15, 15, 25)
+MOVE_SEQUENCE = [
+    (27, 0, 20),
+    (27, 0, 7),
+    CLOSE, DEFAULT, BIN, OPEN, DEFAULT, 
+    (10, 20, 20),
+    (20, 0, 6),
+    DEFAULT,
+    (20, -20, 20),
+    (20, -21, 8),
+    CLOSE, DEFAULT, BIN, OPEN, DEFAULT,
+    (20, -30, 20),
+    (0, 0, 50),
+    (20, 30, 50),
+    (20, -30, 50),
+    (10, 20, 20),
+    CLOSE, DEFAULT, 
+    (-10, 20, 20),
+    OPEN, DEFAULT,
+    (10, 30, 10),
+    DEFAULT
+]
+
+
+def main_hardcode():
+    move_to_default(arm)
+    time.sleep(0.5)
+
+    for pos in MOVE_SEQUENCE:
+        if pos == CLOSE:
+            close_claw(arm)
+        elif pos == OPEN:
+            open_claw(arm)
+        elif pos == DEFAULT:
+            move_to_default(arm, open=False)
+            time.sleep(.4)
+        else:
+            move_to_position(arm, pos)
+
+    time.sleep(5)
+    move_to_default(arm)
+
+    while True:
+        a, b, c = map(float, input("Enter position: ").split())
+        move_to_position(arm, (a, b, c))
 
 if __name__ == "__main__":
-    main()
+    main_hardcode()
