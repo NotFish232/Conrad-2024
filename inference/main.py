@@ -174,7 +174,7 @@ def open_claw(arm: xarm.Controller) -> None:
 
 
 def close_claw(arm: xarm.Controller, pos: int | None = None) -> None:
-    move(arm, 1, pos or 1700, wait=True)
+    move(arm, 1, pos or 1840, wait=True)
 
 
 def vertical_claw(arm: xarm.Controller) -> None:
@@ -315,17 +315,16 @@ MOVE_SEQUENCE = [
     (20, -30, 20),
     (0, 0, 50),
     (20, 30, 50),
-    (20, -30, 50),
-    (10, 20, 20),
-    CLOSE, DEFAULT, 
+    DEFAULT, 
     (-10, 20, 20),
-    OPEN, DEFAULT,
+    DEFAULT,
     (10, 30, 10),
     DEFAULT
 ]
 
 
 def main_hardcode():
+    input()
     move_to_default(arm)
     time.sleep(0.5)
 
@@ -336,7 +335,7 @@ def main_hardcode():
             open_claw(arm)
         elif pos == DEFAULT:
             move_to_default(arm, open=False)
-            time.sleep(.4)
+            time.sleep(1)
         else:
             move_to_position(arm, pos)
 
